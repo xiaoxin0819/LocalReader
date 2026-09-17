@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>阅读器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="light">
+
+<header class="topbar">
+  <div class="left">
+    <button id="btnShelf" class="icon-btn" title="切换书架">☰</button>
+    <select id="shelfSelect" class="shelf-select"></select>
+    <button id="btnAddShelf" class="ghost-btn" title="导入文件夹为书架">+ 导入文件夹</button>
+    <button id="btnManageShelves" class="ghost-btn" title="管理已导入的书架">管理</button>
+  </div>
+  <div class="center">
+    <div id="bookTitle" class="book-title">未选择书籍</div>
+    <div id="bookMeta" class="book-meta"></div>
+  </div>
+  <div class="right">
+    <button id="btnPrevBook" class="icon-btn nav-book" title="上一本（Alt+←）">‹‹</button>
+    <button id="btnNextBook" class="icon-btn nav-book" title="下一本（Alt+→）">››</button>
+    <span class="vsep"></span>
+    <button id="btnTheme" class="icon-btn" title="切换主题">◐</button>
+    <button id="btnSettings" class="icon-btn" title="阅读设置">⚙</button>
+    <button id="btnToc" class="icon-btn" title="目录">☷</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-head">
+      <span class="sidebar-title">书架</span>
+      <div class="sidebar-tools">
+        <input id="bookFilter" class="mini-input" placeholder="筛选书名 / 作者…">
+        <select id="bookSort" class="mini-select">
+          <option value="name">按书名</option>
+          <option value="size">按大小</option>
+          <option value="mtime">按时间</option>
+          <option value="read">按阅读进度</option>
+        </select>
+      </div>
+      <div id="shelfPath" class="shelf-path"></div>
+    </div>
+    <div id="bookList" class="book-list"></div>
+    <div class="pager">
+      <button id="bkPrev" class="pg-btn">‹</button>
+      <span id="bkPageInfo" class="pg-info">0 / 0</span>
+      <button id="bkNext" class="pg-btn">›</button>
+    </div>
+  </aside>
+
+  <div class="reader-col">
+    <section id="reader" class="reader">
+      <div id="chapterHead" class="chapter-head"></div>
+      <div class="quick-nav">
+        <button id="qnPrev" class="qn-btn" title="上一章">
+          <span class="qn-arrow">‹</span><span class="qn-text">上一章</span>
+        </button>
+        <button id="qnNext" class="qn-btn primary" title="下一章">
+          <span class="qn-text">下一章</span><span class="qn-arrow">›</span>
+        </button>
+        <div id="qnName" class="qn-name"></div>
+      </div>
+      <div id="content" class="content">
+        <div class="empty-hint">从左侧书架选一本书开始阅读</div>
+      </div>
+      <button id="endHint" class="end-hint" title="下一章">下一章 ›</button>
+    </section>
+
+    <footer class="bottombar">
+      <button id="btnChapterCollapse" class="icon-btn" title="收起/展开书目与目录">⇱</button>
+      <button id="btnPrev" class="nav-btn">上一本</button>
+      <div class="progress-wrap">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressText" class="progress-text">—</div>
+      </div>
+      <button id="btnNext" class="nav-btn">下一本</button>
+      <button id="btnTop" class="icon-btn" title="回到顶部">⇧</button>
+    </footer>
+  </div>
+
+  <aside id="toc" class="toc">
+    <div class="toc-head">
+      <span>目录</span>
+      <span class="toc-tools">
+        <span id="tocCount" class="toc-count"></span>
+        <button id="tocTop" class="toc-order" title="目录回到顶部">⇧</button>
+        <button id="tocOrder" class="toc-order">正序</button>
+      </span>
+    </div>
+    <div id="tocList" class="toc-list"></div>
+  </aside>
+</main>
+
+<!-- 选文件夹 -->
+<div id="modalBrowse" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>选择文件夹</span>
+      <button id="browseClose" class="icon-btn">✕</button>
+    </div>
+    <div class="browse-bar">
+      <button id="browseUp" class="ghost-btn">↑ 上级</button>
+      <input id="browsePath" class="browse-path" spellcheck="false">
+      <button id="browseGo" class="ghost-btn">转到</button>
+    </div>
+    <div id="browseList" class="browse-list"></div>
+    <div class="modal-foot">
+      <span id="browseHint" class="hint"></span>
+      <button id="browsePick" class="primary-btn">导入此文件夹</button>
+    </div>
+  </div>
+</div>
+
+<!-- 管理书架 -->
+<div id="modalShelves" class="modal hidden">
+  <div class="modal-box small">
+    <div class="modal-head">
+      <span>管理书架</span>
+      <button id="shelfClose" class="icon-btn">✕</button>
+    </div>
+    <div id="shelfList" class="shelf-mgr"></div>
+    <div class="modal-foot">
+      <span class="hint">移除书架只是取消导入，不会删除磁盘上的 txt 文件</span>
+      <button id="shelfMgrDone" class="primary-btn">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- 阅读设置 -->
+<div id="modalSettings" class="modal hidden">
+  <div class="modal-box small">
+    <div class="modal-head">
+      <span>阅读设置</span>
+      <button id="setClose" class="icon-btn">✕</button>
+    </div>
+    <div class="settings-body">
+      <label class="row"><span>字号</span><input id="setFontSize" type="range" min="14" max="34" step="1"><b id="vFontSize"></b></label>
+      <label class="row"><span>行距</span><input id="setLineHeight" type="range" min="1.2" max="3" step="0.05"><b id="vLineHeight"></b></label>
+      <label class="row"><span>首行缩进</span><input id="setIndent" type="range" min="0" max="4" step="0.5"><b id="vIndent"></b></label>
+      <label class="row"><span>字距</span><input id="setLetter" type="range" min="0" max="3" step="0.5"><b id="vLetter"></b></label>
+      <label class="row"><span>版心宽度</span><input id="setMaxWidth" type="range" min="520" max="1400" step="20"><b id="vMaxWidth"></b></label>
+      <label class="row"><span>字体</span>
+        <select id="setFamily">
+          <option value="serif">宋体 / 衬线</option>
+          <option value="song">思源宋体</option>
+          <option value="kai">楷体</option>
+          <option value="hei">黑体</option>
+        </select><b></b>
+      </label>
+      <label class="row check"><span>自动下一章</span>
+        <input id="setAutoNext" type="checkbox">
+        <b></b>
+      </label>
+      <div class="font-block">
+        <div class="font-head">
+          <span>自定义字体</span>
+          <button id="btnAddFont" class="ghost-btn">+ 添加字体文件</button>
+        </div>
+        <div id="fontList" class="font-list"></div>
+        <input id="fontFile" type="file" accept=".ttf,.otf,.woff,.woff2,.ttc" hidden>
+      </div>
+      <div class="row-btns">
+        <button id="setReset" class="ghost-btn">恢复默认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="immersiveHint" class="immersive-hint">点击正文中间区域可隐藏 / 显示工具栏</div>
+<div id="toast" class="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

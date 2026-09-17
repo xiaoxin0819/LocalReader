@@ -1,0 +1,14 @@
+# 运行时/个人数据（导入的书架路径、阅读进度）不进仓库
+reader.config.json
+__srv.log
+__srv.err
+
+# 用户自己导入的字体文件
+fonts/*
+!fonts/.gitkeep
+
+node_modules/
+npm-debug.log*
+.DS_Store
+Thumbs.db
+*.tmp
