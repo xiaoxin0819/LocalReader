@@ -58,6 +58,29 @@ node server.mjs
 PORT=8000 node server.mjs
 ```
 
+## 打包成单文件 exe
+
+不需要 Node 环境的独立 Windows 可执行文件，产物 `dist/LocalReader.exe`（约 90 MB）：
+
+```bash
+node build/build-exe.mjs              # 打包（含图标与版本信息）
+node build/build-exe.mjs --skip-icon  # 跳过图标替换，快得多
+```
+
+原理是 Node.js SEA（Single Executable Application）：把 `parse-core.mjs` + `server.mjs` 内联成 CJS，前端资源作为 SEA assets 嵌入，`postject` 把 blob 注入 node.exe，`rcedit` 写入图标与版本信息。首次打包会自动下载 `postject` / `rcedit` 到 `build/.tmp/` 缓存。
+
+双击 exe 即启动服务并打开浏览器；已在运行则只打开页面（不重启服务）。数据目录为 `%LOCALAPPDATA%\LocalReader`（存 `reader.config.json` 与 `fonts/`）。
+
+环境变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `PORT` | 端口，默认 `7788` |
+| `LOCALREADER_DATA` | 数据目录，默认 `%LOCALAPPDATA%\LocalReader` |
+| `LOCALREADER_NO_BROWSER` | 设为 `1` 时不自动打开浏览器 |
+
+注意：`rcedit` 必须在注入 SEA blob **之前**执行，否则会退化到极慢；打包脚本已按此顺序编排。
+
 ## 目录结构
 
 ```
@@ -70,6 +93,9 @@ public/            前端（原生 HTML / CSS / JS，无构建步骤）
   app.js
 fonts/             自定义字体存放目录（用户上传，不进仓库）
 reader.config.json 运行时配置：书架、阅读进度、字体、设置（自动生成，不进仓库）
+reader.ico         应用图标
+build/build-exe.mjs 打包脚本（生成单文件 exe）
+dist/              打包产物（不进仓库）
 ```
 
 ## 命令行工具：统一章节
