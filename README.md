@@ -3,6 +3,18 @@
 一个本地 TXT 小说阅读器：把磁盘上的小说文件夹导入为「书架」，直接在浏览器里分章阅读。
 零依赖，只用 Node.js 内置模块，不联网、不上传任何数据。
 
+## 下载（普通用户）
+
+**[⬇ 下载 LocalReader.zip](https://github.com/xiaoxin0819/LocalReader/releases/latest/download/LocalReader.zip)**（34 MB）
+
+解压后双击 `LocalReader.exe` 即可，**无需安装 Node.js**。
+
+- 首次运行会自动打开浏览器 <http://127.0.0.1:7789/>，在界面里导入 txt 文件夹
+- 配置与字体存在 `%LOCALAPPDATA%\LocalReader`（不污染 exe 所在目录）
+- 换端口：在数据目录放 `port.txt` 写数字，或用 `LocalReader.exe --port 8080`
+
+全部版本见 [Releases](https://github.com/xiaoxin0819/LocalReader/releases)。
+
 ## 特性
 
 **书架**
