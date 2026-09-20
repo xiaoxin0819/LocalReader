@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-set "PORT=7788"
+set "PORT=7789"
 
 rem ---- locate node.exe ----
 set "NODE="

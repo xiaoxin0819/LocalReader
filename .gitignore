@@ -2,6 +2,17 @@
 reader.config.json
 __srv.log
 __srv.err
+# 用户自选的端口（新建 port.txt 即可换端口）
+port.txt
+
+# 运行时缓存（正文/目录/作者信息等，自动生成）
+cache/
+
+# 日志
+*.log
+
+# 开发调试脚本（一次性探针、浏览器 profile）
+.scratch/
 
 # 用户自己导入的字体文件
 fonts/*
@@ -12,6 +23,9 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 *.tmp
+
+# 运行时缓存（作者信息等，自动生成）
+.cache/
 
 # 打包产物与临时缓存
 dist/

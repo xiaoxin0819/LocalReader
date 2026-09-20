@@ -61,10 +61,38 @@ const NODE = findNode();
 console.log("Node: " + NODE + " (" + spawnSync(NODE, ["--version"], { encoding: "utf8" }).stdout.trim() + ")");
 
 // 前端资源：全部嵌进 exe
-const ASSETS = [["index.html", "public/index.html"], ["style.css", "public/style.css"], ["app.js", "public/app.js"], ["reader.ico", "reader.ico"]];
+const ASSETS = [
+  ["index.html", "public/index.html"],
+  ["style.css", "public/style.css"],
+  ["app.js", "public/app.js"],
+  ["replace.js", "public/replace.js"],
+  ["reader.ico", "reader.ico"],
+  ["builtin-replace-rules.json", "sources/builtin-replace-rules.json"],
+  ["builtin-txt-toc-rules.json", "sources/builtin-txt-toc-rules.json"],
+];
 for (const [, rel] of ASSETS) {
   if (!fs.existsSync(path.join(ROOT, rel))) fail("缺少资源文件: " + rel);
 }
+
+/* ---------------- 0. legado 规则引擎模块：各自包 IIFE 内联 ---------------- */
+
+/** 把一个 ES module 去掉 import/export 后包进 IIFE，导出名显式 return */
+function inlineEsmModule(rel, importBlocks) {
+  let src = readLF(path.join(ROOT, rel));
+  for (const block of importBlocks) src = replaceOnce(src, block, "", rel + " 的 import");
+  src = src.replace(/^export (?=(?:const|let|var|class|function|async function)\b)/gm, "").trim();
+  if (!src) fail("内联 " + rel + " 失败：内容为空");
+  return src;
+}
+
+const JAVA_REGEX_SRC = inlineEsmModule("src/java-regex.mjs", []);
+const REPLACE_ENGINE_SRC = inlineEsmModule("src/replace-engine.mjs", [
+  'import vm from "node:vm";\nimport { javaRegex } from "./java-regex.mjs";\n\n',
+]);
+const TXT_TOC_SRC = inlineEsmModule("src/txt-toc-rules.mjs", [
+  'import vm from "node:vm";\nimport { javaRegex, tryJavaRegex } from "./java-regex.mjs";\n\n',
+]);
+step("内联 legado 规则引擎模块：java-regex / replace-engine / txt-toc-rules");
 
 // 1a. parse-core.mjs：去掉 export 前缀，变成普通声明
 let core = readLF(path.join(ROOT, "parse-core.mjs"));
@@ -77,16 +105,29 @@ let srv = readLF(path.join(ROOT, "server.mjs"));
 
 srv = replaceOnce(srv, [
   'import http from "node:http";',
+  'import crypto from "node:crypto";',
   'import fs from "node:fs";',
   'import fsp from "node:fs/promises";',
   'import path from "node:path";',
+  'import vm from "node:vm";',
   'import { fileURLToPath } from "node:url";',
-  'import { decodeBuffer, analyzeText } from "./parse-core.mjs";'
+  'import { decodeBuffer, analyzeText } from "./parse-core.mjs";',
+  'import { javaRegex, tryJavaRegex } from "./src/java-regex.mjs";',
+  'import { replaceWithRule, replaceManyWithRule, RegexTimeoutError } from "./src/replace-engine.mjs";',
+  'import { pickTocRule, analyzeByTocRule, makeLineIndexer, tocRuleFingerprint, getTocRules as getEnabledTocRules } from "./src/txt-toc-rules.mjs";'
 ].join("\n") + "\n", "", "server.mjs 的 import 块");
 
 // 1c. 路径：exe 模式下资源在内存里，配置与字体写到用户数据目录
 srv = replaceOnce(srv,
   "const __dirname = path.dirname(fileURLToPath(import.meta.url));\n" +
+  "/**\n" +
+  " * port.txt 的查找目录。\n" +
+  " *\n" +
+  " * 开发模式 = 项目根（与 server.mjs 同级）。\n" +
+  " * exe 模式 = 用户数据目录（build-exe.mjs 会把上一行的 __dirname 整段替换成 APP_DIR，\n" +
+  " * 并把这个常量重新赋值为 APP_DIR）—— 用户在数据目录放 port.txt 即可换端口。\n" +
+  " */\n" +
+  "let APP_DIR_FOR_PORT = __dirname;\n" +
   'const PUBLIC_DIR = path.join(__dirname, "public");\n' +
   'const CONFIG_PATH = path.join(__dirname, "reader.config.json");',
   [
@@ -94,6 +135,8 @@ srv = replaceOnce(srv,
     "const APP_DIR = process.env.LOCALREADER_DATA",
     "  || path.join(process.env.LOCALAPPDATA || process.env.APPDATA || process.cwd(), \"LocalReader\");",
     "try { fs.mkdirSync(APP_DIR, { recursive: true }); } catch {}",
+    "// port.txt 放在数据目录，用户改端口就是编辑这个文件夹里的 port.txt",
+    "let APP_DIR_FOR_PORT = APP_DIR;",
     "const PUBLIC_DIR = \"__sea_assets__\";",
     'const CONFIG_PATH = path.join(APP_DIR, "reader.config.json");',
   ].join("\n"), "PUBLIC_DIR / CONFIG_PATH 头块");
@@ -108,10 +151,15 @@ srv = replaceOnce(srv,
 srv = replaceOnce(srv,
   [
     "async function serveStatic(res, urlPath) {",
-    '  let rel = decodeURIComponent(urlPath);',
+    "  let rel;",
+    "  try { rel = decodeURIComponent(urlPath); }",
+    '  catch { return send(res, 403, { error: "禁止" }); }',
     '  if (rel === "/" || rel === "") rel = "/index.html";',
     "  const abs = path.join(PUBLIC_DIR, rel);",
-    '  if (!abs.startsWith(PUBLIC_DIR)) return send(res, 403, { error: "禁止" });',
+    "  const relFromPublic = path.relative(PUBLIC_DIR, abs);",
+    "  const insidePublic = relFromPublic !== \"\" && relFromPublic !== \"..\"",
+    "    && !relFromPublic.startsWith(`..${path.sep}`) && !path.isAbsolute(relFromPublic);",
+    '  if (!insidePublic) return send(res, 403, { error: "禁止" });',
     "  try {",
     "    const buf = await fsp.readFile(abs);",
     '    send(res, 200, buf, MIME[path.extname(abs).toLowerCase()] || "application/octet-stream");',
@@ -141,21 +189,28 @@ srv = replaceOnce(srv,
 srv = replaceOnce(srv,
   [
     'server.listen(PORT, "127.0.0.1", () => {',
-    "  console.log(`阅读器已启动: http://127.0.0.1:${PORT}`);",
+    "  // PORT=0 时由系统分配，这里回填真实端口，后续所有 URL 都用它",
+    "  const addr = server.address();",
+    "  activePort = (addr && typeof addr === \"object\" && addr.port) ? addr.port : PORT;",
+    "  console.log(`阅读器已启动: http://127.0.0.1:${activePort}`);",
+    "  if (activePort !== 7789) {",
+    "    console.log(`（当前端口 ${activePort}；改端口：命令行加 --port 8080，或在程序同级放 port.txt 写一个数字）`);",
+    "  }",
     "});",
   ].join("\n"),
   [
     "function openBrowser() {",
-    "  const url = `http://127.0.0.1:${PORT}/`;",
+    "  const url = `http://127.0.0.1:${activePort}/`;",
     "  try {",
     '    if (process.env.LOCALREADER_NO_BROWSER) return;',
     '    spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();',
     "  } catch (e) { console.log(\"请手动打开: \" + url); }",
     "}",
     "",
+    "/* 先探测目标端口上是否已经有实例在跑（避免起第二个实例） */",
     "function probeRunning() {",
     "  return new Promise((resolve) => {",
-    '    const req = http.get({ host: "127.0.0.1", port: PORT, path: "/api/state", timeout: 800 }, (r) => {',
+    '    const req = http.get({ host: "127.0.0.1", port: activePort, path: "/api/state", timeout: 800 }, (r) => {',
     "      r.resume();",
     "      resolve(r.statusCode === 200);",
     "    });",
@@ -164,25 +219,21 @@ srv = replaceOnce(srv,
     "  });",
     "}",
     "",
+    "/* 端口占用 / 重复双击的处理由源码里的 server.on(\"error\") 负责；",
+    "   这里只补两件 exe 专属的事：探测已运行实例、自动开浏览器。 */",
     "(async () => {",
     "  if (await probeRunning()) {",
-    "    console.log(`阅读器已在运行: http://127.0.0.1:${PORT}`);",
+    "    console.log(`阅读器已在运行: http://127.0.0.1:${activePort}`);",
     "    openBrowser();",
     "    return;",
     "  }",
-    '  server.on("error", (e) => {',
-    '    if (e.code === "EADDRINUSE") {',
-    "      console.log(`端口 ${PORT} 被占用，直接打开页面…`);",
-    "      openBrowser();",
-    "      setTimeout(() => process.exit(0), 1200);",
-    "    } else {",
-    '      console.error("启动失败: " + e.message);',
-    "      process.exitCode = 1;",
-    "    }",
-    "  });",
-    '  server.listen(PORT, "127.0.0.1", () => {',
-    "    console.log(`阅读器已启动: http://127.0.0.1:${PORT}`);",
+    '  server.listen(activePort, "127.0.0.1", () => {',
+    "    // PORT=0 时由系统分配，回填真实端口",
+    '    const addr = server.address();',
+    '    activePort = (addr && typeof addr === "object" && addr.port) ? addr.port : PORT;',
+    "    console.log(`阅读器已启动: http://127.0.0.1:${activePort}`);",
     "    console.log(`数据目录: ${APP_DIR}`);",
+    "    console.log(`改端口：在数据目录放 port.txt 写一个数字，或用 --port 8080 启动`);",
     '    console.log("关闭本窗口即停止阅读器");',
     "    openBrowser();",
     "  });",
@@ -194,9 +245,11 @@ const bundle = [
   '/* LocalReader 单文件版 —— 由 build/build-exe.mjs 自动生成，请勿直接编辑 */',
   '"use strict";',
   'const http = require("node:http");',
+  'const crypto = require("node:crypto");',
   'const fs = require("node:fs");',
   'const fsp = require("node:fs/promises");',
   'const path = require("node:path");',
+  'const vm = require("node:vm");',
   'const sea = require("node:sea");',
   'const { spawn } = require("node:child_process");',
   "",
@@ -205,6 +258,35 @@ const bundle = [
   "",
   "/* ========== parse-core.mjs（内联，已去掉 export） ========== */",
   core.trimEnd(),
+  "",
+  "/* ========== src/java-regex.mjs（内联，包 IIFE） ========== */",
+  "const __javaRegex = (() => {\n" + JAVA_REGEX_SRC + "\nreturn { JAVA_WORD_BODY, javaRegexSource, javaRegex, tryJavaRegex, isJavaWordChar };\n})();",
+  "const { javaRegex, tryJavaRegex } = __javaRegex;",
+  "",
+  "/* ========== src/replace-engine.mjs（内联，包 IIFE） ========== */",
+  "const __replaceEngine = (() => {\n" + REPLACE_ENGINE_SRC + "\nreturn { RegexTimeoutError, quoteReplacementJs, javaExpandReplacement, RegexJsExtensions, replaceWithRule };\n})();",
+  "",
+  "/* ========== src/txt-toc-rules.mjs（内联，包 IIFE） ========== */",
+  "const __tocRules = (() => {\n" + TXT_TOC_SRC + "\nreturn { SPACE_CHARS, enabledTocRules, getTocRules, pickTocRule, analyzeByTocRule, makeLineIndexer, tocRuleFingerprint };\n})();",
+  "const { replaceWithRule, RegexTimeoutError } = __replaceEngine;",
+  "const { pickTocRule, analyzeByTocRule, makeLineIndexer, tocRuleFingerprint } = __tocRules;",
+  "const getEnabledTocRules = __tocRules.getTocRules;",
+  "",
+  "/* ========== exe 模式下 sources/*.json 改从内联资源读 ========== */",
+  "const __SRC_JSON = { \"builtin-replace-rules.json\": \"builtin-replace-rules.json\", \"builtin-txt-toc-rules.json\": \"builtin-txt-toc-rules.json\" };",
+  "const __readFileSync = fs.readFileSync.bind(fs);",
+  "fs.readFileSync = function (p, ...rest) {",
+  "  try { return __readFileSync(p, ...rest); }",
+  "  catch (e) {",
+  "    const key = __SRC_JSON[path.basename(String(p || \"\"))];",
+  "    if (key && e && e.code === \"ENOENT\") {",
+  "      const buf = Buffer.from(sea.getAsset(key));",
+  "      const enc = rest[0];",
+  "      return (typeof enc === \"string\" && enc !== \"buffer\") ? buf.toString(enc) : buf;",
+  "    }",
+  "    throw e;",
+  "  }",
+  "};",
   "",
   "/* ========== server.mjs（内联，已改造为单文件版） ========== */",
   srv.trimEnd(),

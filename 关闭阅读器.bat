@@ -1,14 +1,24 @@
 @echo off
-setlocal enabledelayedexpansion
-set "PORT=7788"
-set "N=0"
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:"127.0.0.1:%PORT% .*LISTENING"') do (
-  if not "%%p"=="0" (
-    taskkill /f /pid %%p >nul 2>nul
-    if !errorlevel! equ 0 (echo ÒÑÍ£Ö¹ÔÄ¶ÁÆ÷£¬PID %%p) else (echo Í£Ö¹Ê§°Ü£¬PID %%p)
-    set /a N+=1
-  )
+setlocal
+set "PORT=7789"
+
+rem Try graceful shutdown first so pending config writes can flush.
+curl --max-time 2 -s -X POST http://127.0.0.1:%PORT%/api/shutdown >nul 2>nul
+
+rem Wait up to 5 seconds for the listener to stop.
+for /l %%i in (1,1,5) do (
+  netstat -ano | findstr /C:":%PORT% " | findstr /C:"LISTENING" >nul 2>nul
+  if errorlevel 1 goto done
+  ping -n 2 127.0.0.1 >nul
 )
-if !N! equ 0 echo ÔÄ¶ÁÆ÷Î´ÔÚÔËÐÐ
-echo.
-pause
+
+rem Fallback: force kill only if graceful shutdown failed.
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /C:":%PORT% " ^| findstr /C:"LISTENING"') do (
+  taskkill /f /pid %%P >nul 2>nul
+)
+
+:done
+echo Local reader closed.
+ping -n 2 127.0.0.1 >nul
+exit /b 0
+

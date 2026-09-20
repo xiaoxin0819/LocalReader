@@ -112,6 +112,8 @@ body.hide-toc .toc{margin-right:-280px}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .toc-item:hover{background:var(--hover)}
 .toc-item.active{background:var(--accent-soft);font-weight:700;color:var(--accent)}
+.toc-item.vol{color:var(--muted);font-weight:700;letter-spacing:.4px}
+.toc-item.vol::before{content:"卷  ";font-size:10px;opacity:.7}
 
 /* reader */
 .reader{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;background:var(--bg2);overflow:hidden}
@@ -325,3 +327,137 @@ body.immersive .quick-nav:hover{opacity:1}
 .ctx-hint{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto}
 .ctx-sep{height:1px;margin:4px 6px;background:var(--line)}
 ::selection{background:var(--sel);color:var(--text)}
+
+/* ============================================================
+ *  替换净化 / TXT 目录规则面板
+ *  对齐 legado ReplaceRuleActivity + TxtTocRuleActivity。
+ *  本地阅读器只保留这两个 Tab，不含任何在线书源相关样式。
+ * ============================================================ */
+.hidden{display:none!important}
+
+/* ---------------- 通用面板 ---------------- */
+.panel{position:fixed;inset:0;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center;z-index:60}
+.panel-box{
+  background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:min(720px,94vw);max-height:88vh;display:flex;flex-direction:column;
+  box-shadow:0 16px 48px rgba(0,0,0,.22);overflow:hidden;
+}
+.panel-box.wide{width:min(1080px,95vw)}
+.panel-head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;font-weight:700;flex:0 0 auto;
+}
+.hint{font-size:11.5px;color:var(--muted)}
+.mini-btn{
+  border:1px solid var(--line);background:var(--bg2);color:var(--text);
+  padding:2px 8px;border-radius:7px;font-size:11.5px;transition:.15s;
+}
+.mini-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------------- 规则列表 ---------------- */
+.src-toolbar{display:flex;align-items:center;gap:8px;padding:10px 14px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.src-toolbar .ghost-btn{min-width:100px;height:30px;padding:0 12px;display:inline-flex;
+  align-items:center;justify-content:center;box-sizing:border-box;flex:0 0 auto}
+.src-toolbar .mini-input{flex:1 1 200px;min-width:150px}
+.src-toolbar .hint{margin-left:auto}
+.src-list{flex:1 1 auto;overflow:auto;padding:8px 14px 16px}
+.src-row{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px}
+.src-row:hover{background:var(--hover)}
+.src-row.off{opacity:.5}
+.src-info{flex:1 1 auto;min-width:0}
+.src-name{font-size:13px;display:flex;align-items:center;gap:8px}
+.src-group{font-size:10.5px;color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:6px}
+.src-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src-list .hint{display:block;padding:14px 4px}
+
+/* ---------------- 替换净化面板 ---------------- */
+#panelReplace .panel-box{width:min(760px,94vw);height:min(82vh,760px);max-height:none;border-radius:14px}
+.replace-panel{overflow:hidden}
+.replace-tabs{display:flex;align-items:stretch;gap:2px;flex:0 0 auto;padding:0 12px;
+  border-bottom:1px solid var(--line);background:var(--bg2)}
+.rt-tab{appearance:none;border:0;border-bottom:2px solid transparent;background:transparent;
+  color:var(--muted);padding:10px 16px 8px;font-size:13px;font-weight:600;line-height:1.35;
+  cursor:pointer;border-radius:8px 8px 0 0;transition:color .15s,background .15s,border-color .15s}
+.rt-tab:hover{color:var(--text);background:var(--hover)}
+.rt-tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-soft)}
+.replace-pane{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.replace-pane.hidden{display:none}
+.replace-pane .src-toolbar{flex:0 0 auto}
+.replace-pane .src-list{flex:1 1 auto;min-height:0}
+.replace-pane .replace-selbar{flex:0 0 auto}
+
+.replace-selbar{display:flex;align-items:center;flex:0 0 auto;
+  padding:9px 14px;border-top:1px solid var(--line);background:var(--bg2)}
+.rsb-btns{display:flex;align-items:center;gap:8px;flex:1 1 auto}
+.rsb-btns .mini-btn{white-space:nowrap;min-width:0;height:30px;padding:0 12px;display:inline-flex;
+  align-items:center;justify-content:center;box-sizing:border-box;flex:1 1 0}
+.rp-check{flex:0 0 auto;display:flex;align-items:center;padding-right:4px}
+.rp-check input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.rp-builtin{font-size:10px;font-weight:500;color:var(--accent);background:var(--accent-soft);padding:1px 5px;border-radius:5px}
+.rp-builtin.rp-xor{color:#b45309;background:rgba(245,158,11,.16);cursor:help}
+.rp-ico{flex:0 0 auto;width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;
+  font-size:13px;line-height:1;border-radius:7px}
+.rp-ico[data-act=menu]{font-size:15px;letter-spacing:0}
+
+/* ---------------- 小浮层菜单 ---------------- */
+.bk-menu{position:fixed;z-index:150;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  box-shadow:0 8px 24px rgba(0,0,0,.22);padding:4px;min-width:126px;display:flex;flex-direction:column}
+.bk-menu-item{text-align:left;padding:6px 11px;border-radius:6px;font-size:12.5px;color:var(--text)}
+.bk-menu-item:hover{background:var(--hover);color:var(--accent)}
+.bk-menu-item.danger{color:#e05a4f}
+.bk-menu-item.danger:hover{background:rgba(224,90,79,.12);color:#ff6b5e}
+
+/* ---------------- 确认 / 输入弹窗 ---------------- */
+.ask-modal{position:fixed;inset:0;background:rgba(0,0,0,.42);display:flex;align-items:center;
+  justify-content:center;z-index:120}
+.ask-box{width:min(420px,90vw);background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 16px 44px rgba(0,0,0,.3);overflow:hidden;animation:askIn .13s ease-out}
+@keyframes askIn{from{transform:scale(.96);opacity:.6}to{transform:scale(1);opacity:1}}
+.ask-msg{padding:20px 18px;font-size:14px;line-height:1.65;color:var(--text);white-space:pre-wrap}
+.ask-foot{display:flex;justify-content:flex-end;gap:10px;padding:0 14px 14px}
+.ask-foot button{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600}
+.ask-foot .ghost-btn{background:var(--hover);color:var(--muted)}
+.ask-ok{background:var(--accent);color:#fff}
+.ask-ok:hover{filter:brightness(1.08)}
+.ask-box.ask-form{width:min(560px,92vw)}
+.ask-box .ask-title{padding:16px 18px 0;font-size:15px;font-weight:700;color:var(--text)}
+.ask-box.has-title .ask-msg{padding:8px 18px 12px}
+.ask-fields{padding:14px 18px 4px;max-height:min(52vh,440px);overflow:auto}
+.ask-field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.ask-field:last-child{margin-bottom:0}
+.ask-lab{font-size:12px;color:var(--muted)}
+.ask-input,.ask-area{width:100%;border-radius:8px;border:1px solid var(--line);background:var(--bg2);
+  color:var(--text);font-size:13px;padding:8px 10px;outline:none;min-width:0}
+.ask-input{height:36px}
+.ask-area{min-height:132px;resize:vertical;line-height:1.6;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ask-input:focus,.ask-area:focus{border-color:var(--accent)}
+
+/* ---------------- 只读文本窗 ---------------- */
+.txt-box{width:min(620px,92vw);height:min(78vh,720px);display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.35);overflow:hidden}
+.txt-head{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--line);
+  background:var(--bg2);flex:0 0 auto}
+.txt-title{font-size:14px;font-weight:700;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txt-body{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 14px;font-size:12.5px;line-height:1.7;
+  color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.txt-foot{display:flex;justify-content:flex-end;gap:10px;padding:10px 12px;border-top:1px solid var(--line);flex:0 0 auto}
+
+/* ---------------- 导入预览弹窗 ---------------- */
+.imp-box{width:min(620px,92vw);max-height:min(78vh,720px);display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.35);overflow:hidden}
+.imp-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.imp-title{font-size:14px;font-weight:700;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imp-tools{display:flex;gap:6px;padding:9px 14px 4px;flex:0 0 auto}
+.imp-tools>.mini-btn{min-width:100px;height:30px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
+.imp-list{flex:1 1 auto;min-height:0;overflow:auto;padding:4px 14px 10px}
+.imp-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:13px;cursor:pointer}
+.imp-row:hover{background:var(--hover)}
+.imp-row.exists{opacity:.92}
+.imp-name{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imp-tags{flex:0 0 auto;display:flex;gap:4px}
+.imp-tag{font-size:10.5px;line-height:1.5;padding:0 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent)}
+.imp-tag.ex{background:var(--hover);color:var(--muted)}
+.imp-foot{display:flex;justify-content:flex-end;gap:10px;padding:12px 14px;border-top:1px solid var(--line);flex:0 0 auto}
+.imp-foot>button{height:34px;min-width:92px;padding:0 16px;display:inline-flex;align-items:center;
+  justify-content:center;box-sizing:border-box;border-radius:9px}

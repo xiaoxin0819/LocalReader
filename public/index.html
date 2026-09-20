@@ -23,6 +23,7 @@
     <button id="btnPrevBook" class="icon-btn nav-book" title="上一本（Alt+←）">‹‹</button>
     <button id="btnNextBook" class="icon-btn nav-book" title="下一本（Alt+→）">››</button>
     <span class="vsep"></span>
+    <button id="btnReplace" class="icon-btn" title="替换净化 / TXT 目录规则">✎</button>
     <button id="btnTheme" class="icon-btn" title="切换主题">◐</button>
     <button id="btnSettings" class="icon-btn" title="阅读设置">⚙</button>
     <button id="btnToc" class="icon-btn" title="目录">☷</button>
@@ -170,8 +171,61 @@
   </div>
 </div>
 
+<!-- 替换净化 / TXT 目录规则：对齐 legado ReplaceRuleActivity 与 TxtTocRuleActivity。
+     两个页面共用窗口，Tab 切换；TXT 规则同时作用于本地分章与右侧目录。 -->
+<div id="panelReplace" class="panel hidden">
+  <div class="panel-box replace-panel">
+    <div class="panel-head">
+      <span id="replacePanelTitle">替换净化</span>
+      <button class="icon-btn" data-close="panelReplace">✕</button>
+    </div>
+    <div class="replace-tabs" id="replaceTabs">
+      <button class="rt-tab active" data-rtab="replace">替换净化</button>
+      <button class="rt-tab" data-rtab="txtToc">TXT 目录规则</button>
+    </div>
+
+    <section id="replacePane" class="replace-pane">
+      <div class="src-toolbar">
+        <input id="replaceFilter" class="mini-input" placeholder="搜索规则…">
+        <button id="replaceBuiltin" class="ghost-btn">恢复内置规则</button>
+        <button id="replaceAdd" class="ghost-btn">新建规则</button>
+        <button id="replaceImport" class="ghost-btn">本地导入</button>
+        <button id="replaceImportUrl" class="ghost-btn">网络导入</button>
+        <button id="replaceTest" class="ghost-btn">测试替换</button>
+        <span id="replaceStat" class="hint"></span>
+      </div>
+      <div id="replaceList" class="src-list"></div>
+      <div id="replaceSelBar" class="replace-selbar">
+        <div class="rsb-btns">
+          <button class="mini-btn" data-sel="all">全选</button>
+          <button class="mini-btn" data-sel="invert">反选</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="txtTocPane" class="replace-pane hidden">
+      <div class="src-toolbar">
+        <input id="txtTocFilter" class="mini-input" placeholder="搜索目录规则…">
+        <button id="txtTocAdd" class="ghost-btn">新增</button>
+        <button id="txtTocImport" class="ghost-btn">本地导入</button>
+        <button id="txtTocImportUrl" class="ghost-btn">网络导入</button>
+        <button id="txtTocBuiltin" class="ghost-btn">导入默认规则</button>
+        <span id="txtTocStat" class="hint"></span>
+      </div>
+      <div id="txtTocList" class="src-list"></div>
+      <div id="txtTocSelBar" class="replace-selbar">
+        <div class="rsb-btns">
+          <button class="mini-btn" data-sel="all">全选</button>
+          <button class="mini-btn" data-sel="invert">反选</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
 <div id="immersiveHint" class="immersive-hint">点击正文中间区域可隐藏 / 显示工具栏</div>
 <div id="toast" class="toast"></div>
 <script src="app.js"></script>
+<script src="replace.js"></script>
 </body>
 </html>

@@ -155,8 +155,36 @@ function syncSettingsUI() {
 
 /* ---------------- 书架 ---------------- */
 
-async function loadState() {
-  const st = await api("/api/state");
+/** 冷启动占位：没有它，等 /api/state + 书架扫描的这段时间页面就是一片空白 */
+function renderBootHint(text) {
+  const box = $("bookList");
+  if (box) {
+    box.style.cursor = "";
+    box.innerHTML = '<div class="empty-hint" style="padding:30px 10px;font-size:13px">' + esc(text) + "</div>";
+  }
+  const sp = $("shelfPath");
+  if (sp) sp.textContent = text;
+}
+
+async function loadState(attempt = 0) {
+  renderBootHint(attempt === 0 ? "正在载入书架…" : `正在重新连接阅读器服务…（第 ${attempt} 次）`);
+  let st;
+  try {
+    st = await api("/api/state");
+  } catch (e) {
+    // 刚拉起服务时浏览器可能比服务先到（连接被拒 / 服务还没监听）：自动重试，别把首屏留成空白
+    if (attempt < 10) {
+      await new Promise((r) => setTimeout(r, Math.min(1500, 300 * (attempt + 1))));
+      return loadState(attempt + 1);
+    }
+    renderBootHint("连接阅读器服务失败，点这里重试（或确认服务已启动后刷新页面）");
+    const box = $("bookList");
+    if (box) {
+      box.firstElementChild?.addEventListener("click", () => loadState(0));
+      box.style.cursor = "pointer";
+    }
+    return;
+  }
   state.shelves = st.shelves || [];
   state.settings = { ...state.settings, ...(st.settings || {}) };
   state.progress = st.progress || {};
@@ -219,16 +247,45 @@ function renderShelfSelect() {
   }
 }
 
+let shelfLoadSeq = 0;
+
 async function selectShelf(i) {
+  const seq = ++shelfLoadSeq;
   state.shelfIndex = i;
   $("shelfSelect").value = String(i);
-  const data = await api("/api/books?shelf=" + i);
+  // 有上次的书架就先把列表画出来，别让用户盯着「正在读取文件夹…」等磁盘转
+  if (!state.books.length) renderBootHint("正在读取文件夹…");
+  let data;
+  try {
+    data = await api("/api/books?shelf=" + i);
+  } catch (e) {
+    if (seq !== shelfLoadSeq) return;   // 快速连续切换/移除时丢弃旧响应
+    state.books = [];
+    renderBootHint("读取书架失败：" + ((e && e.message) || e));
+    return;
+  }
+  if (seq !== shelfLoadSeq) return;   // 快速连续切换/移除时丢弃旧响应
   state.books = data.books || [];
   $("shelfPath").textContent = data.root || "";
   state.shelves[i].count = state.books.length;
   state.bookPage = 1;
   renderShelfSelect();
   renderBooks();
+  // 服务端回的是磁盘快照（stale）：它可能刚启动，正在后台重扫。稍后静默校正一次。
+  if (data.stale && seq === shelfLoadSeq) {
+    setTimeout(() => {
+      if (seq !== shelfLoadSeq) return;
+      api("/api/books?shelf=" + i).then((fresh) => {
+        if (seq !== shelfLoadSeq) return;
+        const n = (fresh.books || []).length;
+        if (n === state.books.length) return;
+        state.books = fresh.books || [];
+        state.shelves[i].count = n;
+        renderShelfSelect();
+        renderBooks();
+      }).catch(() => {});
+    }, 1200);
+  }
 }
 
 /* ---------------- 书籍列表（按窗口高度自动分页） ---------------- */
@@ -323,8 +380,13 @@ function renderBooks() {
   $("bkPageInfo").textContent = `${state.bookPage} / ${total}  ·  ${list.length} 本`;
   $("bkPrev").disabled = state.bookPage <= 1;
   $("bkNext").disabled = state.bookPage >= total;
+  // 本地书架翻页也从顶部开始（同页重绘不动位置），和在线书架一致
+  if (state.bookPage !== bkRenderedPage) { bkRenderedPage = state.bookPage; box.scrollTop = 0; }
   updateBookNav();
 }
+
+/* 上一次渲染进 #bookList 的页码 */
+let bkRenderedPage = 0;
 
 function tryAuthor(b) {
   return b.author ? " · " + esc(b.author) : "";
@@ -483,7 +545,16 @@ function easeScrollTop(el, to, ms, done) {
 /* ---------------- 章节正文缓存（预取相邻章，翻章不再等网络） ---------------- */
 
 const chapterCache = new Map();
+// 本地 txt 的目录 JSON 也按文件版本缓存。切回已打开的书时不再重复解析/传输整份目录。
+// key 带 mtime/size，文件或净化/TXT 目录规则变化后不会错误复用旧目录。
+const localBookDataCache = new Map();
+let localOpenSeq = 0;
 const chapterKey = (rel, idx) => state.shelfIndex + "|" + rel + "|" + idx;
+
+function localBookDataKey(b) {
+  return state.shelfIndex + "|" + String(b && b.rel || "") + "|"
+    + String(b && b.mtime || 0) + "|" + String(b && b.size || 0);
+}
 
 function chapterUrl(rel, idx) {
   return `/api/chapter?shelf=${state.shelfIndex}&rel=${encodeURIComponent(rel)}&idx=${idx}`;
@@ -520,12 +591,32 @@ function prefetchNeighbors(idx) {
 
 async function openBook(b, opts = {}) {
   flushFlip();                       // 上一本的翻章动画若还在滑，先落定，别把两本书的段落拼在一起
-  const same = state.book && state.book.rel === b.rel;
+  const seq = ++localOpenSeq;
+  const same = state.book && state.book.rel === b.rel
+    && state.book.shelfIndex === state.shelfIndex;
   const previous = same && opts.keepChapter !== false ? state.chapterIdx : null;
   if (state.book && !same) saveProgress();
-  if (!same) chapterCache.clear();
-  const data = await api(`/api/book?shelf=${state.shelfIndex}&rel=${encodeURIComponent(b.rel)}`);
-  state.book = { rel: b.rel, name: b.name, ...data };
+  // chapterKey 已按书架和路径隔离，切书不应清掉其它书的已抓章节。
+  // 目录同样复用；规则变更时由 replace.js 显式清空并传 noCache。
+  const dataKey = localBookDataKey(b);
+  let data = opts.noCache ? null : localBookDataCache.get(dataKey);
+  if (!data) {
+    // 大文件解析（几千万字的 txt）要几百毫秒到数秒，先给个提示，别让阅读区一直空着
+    if (!$("content").textContent.trim()) {
+      $("content").innerHTML = '<div class="empty-hint">正在解析《' + esc(b.name) + "》…</div>";
+    }
+    try {
+      data = await api(`/api/book?shelf=${state.shelfIndex}&rel=${encodeURIComponent(b.rel)}`);
+    } catch (e) {
+      if (seq === localOpenSeq) {
+        $("content").innerHTML = '<div class="empty-hint">打开失败：' + esc((e && e.message) || String(e)) + "</div>";
+      }
+      return;
+    }
+    localBookDataCache.set(dataKey, data);
+  }
+  if (seq !== localOpenSeq) return;
+  state.book = { rel: b.rel, shelfIndex: state.shelfIndex, name: b.name, ...data };
   state.book.chapterCount = data.chapterCount;
   $("bookTitle").textContent = data.title + (data.author ? "  ·  " + data.author : "");
   $("bookTitle").title = data.title;
@@ -545,13 +636,33 @@ async function openBook(b, opts = {}) {
   await gotoChapter(Math.min(idx, Math.max(0, data.chapterCount - 1)), pr && previous === null ? pr.scroll : 0);
 }
 
+/**
+ * 卷标题（legado BookChapter.isVolume）本身没有正文，翻到它就是一片空白。
+ * 这里对齐 legado 的语义：目录里保留卷标题，但阅读落点统一挪到最近的正文章。
+ */
+function readableChapterIdx(book, idx) {
+  const total = book.chapterCount || 0;
+  const chs = book.chapters || [];
+  if (!total || !chs.length) return idx;
+  const at = (n) => chs.find((c) => c.idx === n) || null;
+  const cur = at(idx);
+  if (!cur || !cur.volume) return idx;
+  for (let j = idx + 1; j < total; j++) { const c = at(j); if (c && !c.volume) return j; }
+  for (let j = idx - 1; j >= 0; j--) { const c = at(j); if (c && !c.volume) return j; }
+  return idx;
+}
+
 async function runChapter(idx, scrollTo = 0) {
   if (!state.book) return;
-  const total = state.book.chapterCount;
+  const book = state.book;
+  const total = book.chapterCount;
   idx = Math.max(0, Math.min(idx, total - 1));
+  idx = readableChapterIdx(book, idx);
   state.chapterIdx = idx;
   flushFlip();                                              // 上次翻章还在滑就先落定，后续判断以真实视觉为准
-  const c = await fetchChapter(state.book.rel, idx);
+  const c = await fetchChapter(book.rel, idx);
+  // 切书期间旧书的请求可能晚返回；页面已结束时不再回灌旧内容。
+  if (state.book !== book) return;
   if (!c) return toast("章节加载失败");
   const el = $("content");
   const isFlip = chRenderedIdx >= 0 && chRenderedIdx !== idx;
@@ -763,8 +874,9 @@ function renderToc() {
     for (let i = start; i < end; i++) {
       const c = state.book.chapters[state.tocDesc ? n - 1 - i : i];
       const el = document.createElement("div");
-      el.className = "toc-item" + (c.idx === state.chapterIdx ? " active" : "");
+      el.className = "toc-item" + (c.volume ? " vol" : "") + (c.idx === state.chapterIdx ? " active" : "");
       el.textContent = c.title;
+      if (c.volume) el.title = "卷标题（没有正文，点击会跳到该卷第一章）";
       el.dataset.idx = c.idx;
       el.onclick = () => gotoChapter(c.idx);
       inner.appendChild(el);
@@ -1274,7 +1386,7 @@ function renderShelfManager() {
     del.className = "ghost-btn shelf-del";
     del.textContent = "移除";
     del.onclick = () => {
-      if (del.dataset.armed === "1") { clearTimeout(shelfArmTimer); removeShelf(i); return; }
+      if (del.dataset.armed === "1") { clearTimeout(shelfArmTimer); removeShelf(i, del); return; }
       // 两段式确认：第一次点击进入待确认，4 秒后自动复位
       box.querySelectorAll(".shelf-del.arm").forEach((b) => { b.classList.remove("arm"); b.dataset.armed = "0"; b.textContent = "移除"; });
       del.classList.add("arm");
@@ -1293,21 +1405,27 @@ function renderShelfManager() {
   });
 }
 
-async function removeShelf(index) {
+async function removeShelf(index, btn) {
   const s = state.shelves[index];
   if (!s) return;
+  if (btn) { btn.disabled = true; btn.textContent = "移除中…"; }
   let r;
   try {
     r = await api("/api/shelves/remove", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ index })
     });
-  } catch (e) { return toast("移除失败：" + e.message); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "移除"; }
+    return toast("移除失败：" + e.message);
+  }
 
+  const wasCurrent = index === state.shelfIndex;
   state.shelves = r.shelves || [];
   toast("已移除：" + s.name);
 
   if (!state.shelves.length) {
+    shelfLoadSeq++;
     state.shelfIndex = -1;
     state.books = [];
     $("shelfPath").textContent = "";
@@ -1319,16 +1437,29 @@ async function removeShelf(index) {
     return;
   }
 
-  const wasCurrent = index === state.shelfIndex;
   let next = state.shelfIndex;
   if (index < state.shelfIndex) next = state.shelfIndex - 1;
   else if (wasCurrent) next = Math.min(index, state.shelves.length - 1);
   if (next < 0 || next >= state.shelves.length) next = 0;
-
+  state.shelfIndex = next;
   try { localStorage.setItem("lastShelf", String(next)); } catch {}
-  await selectShelf(next);
-  if (wasCurrent) neutralReaderView();   // 正在读的书属于被移除的书架
+
+  // 先把弹窗和下拉框刷新掉；删除非当前书架时不需要重扫目录。
   renderShelfManager();
+  renderShelfSelect();
+
+  if (!wasCurrent) return;
+
+  // 当前书架被删掉：立即清空阅读区并异步加载下一个书架，
+  // 不再让「确认移除」按钮等整轮目录扫描。
+  state.books = [];
+  neutralReaderView();
+  $("bookList").innerHTML = '<div class="empty-hint" style="padding:30px 10px;font-size:13px">正在载入书架…</div>';
+  $("bkPageInfo").textContent = "…";
+  selectShelf(next).catch((e) => {
+    toast("载入书架失败：" + e.message);
+    renderBooks();
+  });
 }
 
 $("btnManageShelves").onclick = () => { renderShelfManager(); $("modalShelves").classList.remove("hidden"); };
@@ -1392,4 +1523,5 @@ $("browseGo").onclick = () => loadBrowse($("browsePath").value.trim());
 
 /* 启动 */
 syncTocOrderBtn();
+renderBootHint("正在载入书架…");   // 先画占位，冷启动不会是一片空白
 loadState();
