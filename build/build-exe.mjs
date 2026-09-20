@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { request as httpRequest } from "node:http";
+import { zipDirectory } from "./zip.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");        // 阅读器/
@@ -411,7 +412,59 @@ console.log("");
 console.log("打包完成: " + exePath);
 console.log("文件大小: " + (finalSize / 1048576).toFixed(1) + " MB");
 console.log("");
-console.log("分发方式：把这个 exe 单独拷给别人，双击即用（对方无需安装 Node.js）");
+
+/* ---------------- 便携包（可直接发给别人）----------------
+   只放 exe + 说明：首次运行会在 %LOCALAPPDATA%\LocalReader 生成
+   reader.config.json / fonts/ / port.txt（可放），
+   用户双击即用，无需安装 Node.js。 */
+const PORTABLE_DIR = path.join(DIST, "LocalReader");
+fs.rmSync(PORTABLE_DIR, { recursive: true, force: true });
+fs.mkdirSync(PORTABLE_DIR, { recursive: true });
+fs.copyFileSync(exePath, path.join(PORTABLE_DIR, "LocalReader.exe"));
+
+fs.writeFileSync(path.join(PORTABLE_DIR, "README.txt"), [
+  "LocalReader 本地 TXT 小说阅读器 —— 便携版",
+  "",
+  "【怎么用】",
+  "  1. 双击 LocalReader.exe",
+  "  2. 会自动打开浏览器（地址 http://127.0.0.1:7789）",
+  "  3. 关闭那个黑色命令行窗口即可退出程序",
+  "",
+  "【换个端口】",
+  "  默认用 7789。想换端口有三种方式（任选其一）：",
+  "    1) 在数据目录放 port.txt，里面写一个数字，例如：8080",
+  "    2) 命令行运行：LocalReader.exe --port 8080",
+  "    3) 设环境变量：set PORT=8080 然后运行 LocalReader.exe",
+  "  端口被占用时会自动往后找一个空闲端口，启动日志里会打印实际地址。",
+  "",
+  "【数据放在哪】",
+  "  不在这个文件夹，而在用户数据目录（避免污染 exe 所在位置）：",
+  "    %LOCALAPPDATA%\\LocalReader\\reader.config.json  配置（书架路径、阅读设置）",
+  "    %LOCALAPPDATA%\\LocalReader\\fonts\\             自定义字体",
+  "  想换位置：设环境变量 LOCALREADER_DATA 指向别的目录。",
+  "",
+  "【注意】",
+  "  · 首次运行需要先在界面里导入 txt 文件或文件夹（本地阅读器不联网）。",
+  "  · 重复双击不会启动多个实例，只会打开已运行的页面。",
+  "  · 想同时开多个实例（不同书库）：复制一份 exe，各设各的 LOCALREADER_DATA 和 port.txt。",
+  "",
+  "【常见问题】",
+  "  · 浏览器没自动打开：手动访问 http://127.0.0.1:7789",
+  "  · 页面打不开：确认那个黑色命令行窗口还开着（关掉窗口 = 退出程序）",
+  "",
+].join("\r\n"), "utf8");
+
+const zipPath = path.join(DIST, "LocalReader.zip");
+fs.rmSync(zipPath, { force: true });
+// 包一层 LocalReader/：用户解压到桌面时得到文件夹而不是散落的 exe
+const zipCount = zipDirectory(PORTABLE_DIR, zipPath, "LocalReader");
+
+console.log("分发方式：");
+console.log("  · 单独拷 exe：" + exePath);
+console.log("  · 便携包：" + PORTABLE_DIR);
+if (fs.existsSync(zipPath)) {
+  console.log("  · 压缩包：" + zipPath + "  (" + (fs.statSync(zipPath).size / 1048576).toFixed(1) + " MB, " + zipCount + " 个条目)");
+}
 
 /* ---------------- 依赖下载 ---------------- */
 
